@@ -1,0 +1,866 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── COMPANY (TENANT) ────────────────────────────────────────────────────────
+
+model Company {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  size            CompanySize
+  industry        Industry
+  logoUrl         String?
+  primaryColor    String?  @default("#3A2CFF")
+  website         String?
+  taxId           String?  // VKN
+  city            String?
+  country         String   @default("TR")
+  language        Language @default(TR)
+  plan            Plan     @default(STARTER)
+  trialEndsAt     DateTime?
+  subscriptionId  String?  // Stripe subscription ID
+  customerId      String?  // Stripe customer ID
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  users           User[]
+  modules         CompanyModule[]
+  employees       Employee[]
+  onboarding      OnboardingProgress?
+  leaveTypes      LeaveType[]
+  leaveRequests   LeaveRequest[]
+  payrollRuns     PayrollRun[]
+  jobs            Job[]
+  candidates      Candidate[]
+  okrs            OKR[]
+  reviews         Review[]
+  courses         Course[]
+  surveys         Survey[]
+  recognitions    Recognition[]
+  kvkkConsents    KvkkConsent[]
+  kvkkRequests    KvkkRequest[]
+
+  @@map("companies")
+}
+
+enum CompanySize {
+  MICRO      // 1-15
+  SMALL      // 16-50
+  MEDIUM     // 51-200
+  LARGE      // 201-500
+  ENTERPRISE // 500+
+}
+
+enum Industry {
+  TECHNOLOGY
+  RETAIL
+  MANUFACTURING
+  LOGISTICS
+  FINANCE
+  HEALTHCARE
+  EDUCATION
+  HOSPITALITY
+  PROFESSIONAL_SERVICES
+  OTHER
+}
+
+enum Language {
+  TR
+  EN
+}
+
+enum Plan {
+  STARTER
+  GROWTH
+  PRO
+  ENTERPRISE
+}
+
+// ─── USER / AUTH ─────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String?
+  name          String
+  role          UserRole  @default(EMPLOYEE)
+  companyId     String?
+  avatarUrl     String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  company       Company?  @relation(fields: [companyId], references: [id])
+  sessions      Session[]
+  accounts      Account[]
+  notifications Notification[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN    // İKPro internal
+  COMPANY_ADMIN  // Company HR admin
+  HR_MANAGER
+  MANAGER
+  EMPLOYEE
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─── MODULES ─────────────────────────────────────────────────────────────────
+
+model Module {
+  id          String       @id @default(cuid())
+  slug        ModuleSlug   @unique
+  name        String
+  description String
+  icon        String
+  pricePerEmployee Float?  // monthly per employee in TRY
+  priceFlat   Float?       // flat monthly price in TRY
+  billingUnit BillingUnit
+  isFree      Boolean      @default(false)
+  freeLimit   Int?         // max employees on free tier
+  isCore      Boolean      @default(false)
+  dependsOn   ModuleSlug[] // required modules
+  order       Int          @default(0)
+  createdAt   DateTime     @default(now())
+
+  companies   CompanyModule[]
+
+  @@map("modules")
+}
+
+enum ModuleSlug {
+  CORE_HR
+  TIME_LEAVE
+  PAYROLL
+  ATS
+  PERFORMANCE
+  LMS
+  ENGAGEMENT
+  ANALYTICS
+  KVKK
+}
+
+enum BillingUnit {
+  PER_EMPLOYEE
+  PER_JOB_POST
+  FLAT_MONTHLY
+  FREE
+}
+
+model CompanyModule {
+  id          String        @id @default(cuid())
+  companyId   String
+  moduleSlug  ModuleSlug
+  status      ModuleStatus  @default(INACTIVE)
+  activatedAt DateTime?
+  trialEndsAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  module      Module        @relation(fields: [moduleSlug], references: [slug])
+
+  @@unique([companyId, moduleSlug])
+  @@map("company_modules")
+}
+
+enum ModuleStatus {
+  INACTIVE
+  TRIAL
+  ACTIVE
+  SUSPENDED
+}
+
+// ─── EMPLOYEE ────────────────────────────────────────────────────────────────
+
+model Employee {
+  id              String          @id @default(cuid())
+  companyId       String
+
+  // Identity
+  firstName       String
+  lastName        String
+  email           String
+  phone           String?
+  avatarUrl       String?
+  birthDate       DateTime?
+  gender          Gender?
+  nationality     String?         @default("TR")
+  nationalId      String?         // TC Kimlik No
+
+  // Employment
+  employeeNumber  String?
+  jobTitle        String?
+  department      String?
+  location        String?
+  employmentType  EmploymentType  @default(FULL_TIME)
+  status          EmployeeStatus  @default(ACTIVE)
+  startDate       DateTime?
+  endDate         DateTime?
+  managerId       String?         // self-relation for org chart
+
+  // Payroll
+  salary          Float?
+  salaryCurrency  String?         @default("TRY")
+  salaryPeriod    SalaryPeriod?   @default(MONTHLY)
+  bankName        String?
+  bankIban        String?
+  sgkNumber       String?
+
+  // Emergency
+  emergencyName   String?
+  emergencyPhone  String?
+  emergencyRel    String?
+
+  // Meta
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  company         Company         @relation(fields: [companyId], references: [id])
+  manager         Employee?       @relation("Reports", fields: [managerId], references: [id])
+  reports         Employee[]      @relation("Reports")
+
+  leaveBalances   LeaveBalance[]
+  leaveRequests   LeaveRequest[]
+  payslips        Payslip[]
+  okrs            OKR[]
+  reviewsReceived Review[]        @relation("ReviewsReceived")
+  enrollments     Enrollment[]
+  recognitionsGiven    Recognition[] @relation("RecognitionGiven")
+  recognitionsReceived Recognition[] @relation("RecognitionReceived")
+  kvkkConsents    KvkkConsent[]
+  kvkkRequests    KvkkRequest[]
+
+  @@unique([companyId, email])
+  @@map("employees")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+  FREELANCE
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  TERMINATED
+  PENDING
+}
+
+enum SalaryPeriod {
+  MONTHLY
+  ANNUAL
+  HOURLY
+  DAILY
+}
+
+// ─── ONBOARDING ──────────────────────────────────────────────────────────────
+
+model OnboardingProgress {
+  id              String   @id @default(cuid())
+  companyId       String   @unique
+  completedSteps  String[] // step slugs
+  currentStep     String?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id])
+
+  @@map("onboarding_progress")
+}
+
+// ─── LEAVE & TIME ────────────────────────────────────────────────────────────
+
+model LeaveType {
+  id              String    @id @default(cuid())
+  companyId       String
+  name            String
+  color           String    @default("#3A2CFF")
+  daysPerYear     Float
+  carryOver       Boolean   @default(false)
+  maxCarryOver    Float?
+  requiresApproval Boolean  @default(true)
+  paid            Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+
+  company         Company   @relation(fields: [companyId], references: [id])
+  requests        LeaveRequest[]
+  balances        LeaveBalance[]
+
+  @@map("leave_types")
+}
+
+model LeaveBalance {
+  id            String    @id @default(cuid())
+  employeeId    String
+  leaveTypeId   String
+  year          Int
+  entitled      Float
+  used          Float     @default(0)
+  pending       Float     @default(0)
+  remaining     Float
+
+  employee      Employee  @relation(fields: [employeeId], references: [id])
+  leaveType     LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@map("leave_balances")
+}
+
+model LeaveRequest {
+  id            String        @id @default(cuid())
+  employeeId    String
+  leaveTypeId   String
+  companyId     String
+  startDate     DateTime
+  endDate       DateTime
+  days          Float
+  reason        String?
+  status        LeaveStatus   @default(PENDING)
+  approvedById  String?
+  approvedAt    DateTime?
+  rejectedReason String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  employee      Employee      @relation(fields: [employeeId], references: [id])
+  leaveType     LeaveType     @relation(fields: [leaveTypeId], references: [id])
+  company       Company       @relation(fields: [companyId], references: [id])
+
+  @@map("leave_requests")
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+// ─── PAYROLL ─────────────────────────────────────────────────────────────────
+
+model PayrollRun {
+  id            String        @id @default(cuid())
+  companyId     String
+  period        String        // "2024-01" YYYY-MM
+  status        PayrollStatus @default(DRAFT)
+  totalGross    Float         @default(0)
+  totalNet      Float         @default(0)
+  totalSgk      Float         @default(0)
+  totalTax      Float         @default(0)
+  employeeCount Int           @default(0)
+  processedAt   DateTime?
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  company       Company       @relation(fields: [companyId], references: [id])
+  payslips      Payslip[]
+
+  @@unique([companyId, period])
+  @@map("payroll_runs")
+}
+
+model Payslip {
+  id            String      @id @default(cuid())
+  payrollRunId  String
+  employeeId    String
+  grossSalary   Float
+  sgkEmployee   Float
+  sgkEmployer   Float
+  incomeTax     Float
+  stampTax      Float
+  netSalary     Float
+  additions     Json?       // bonuses, allowances
+  deductions    Json?       // absences, advances
+  createdAt     DateTime    @default(now())
+
+  payrollRun    PayrollRun  @relation(fields: [payrollRunId], references: [id])
+  employee      Employee    @relation(fields: [employeeId], references: [id])
+
+  @@unique([payrollRunId, employeeId])
+  @@map("payslips")
+}
+
+enum PayrollStatus {
+  DRAFT
+  PROCESSING
+  PROCESSED
+  PAID
+  CANCELLED
+}
+
+// ─── ATS ─────────────────────────────────────────────────────────────────────
+
+model Job {
+  id              String      @id @default(cuid())
+  companyId       String
+  title           String
+  department      String?
+  location        String?
+  type            JobType     @default(FULL_TIME)
+  description     String?     @db.Text
+  requirements    String?     @db.Text
+  salaryMin       Float?
+  salaryMax       Float?
+  salaryCurrency  String      @default("TRY")
+  status          JobStatus   @default(DRAFT)
+  publishedAt     DateTime?
+  closedAt        DateTime?
+  createdById     String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  company         Company     @relation(fields: [companyId], references: [id])
+  candidates      Candidate[]
+
+  @@map("jobs")
+}
+
+model Candidate {
+  id            String          @id @default(cuid())
+  jobId         String
+  companyId     String
+  firstName     String
+  lastName      String
+  email         String
+  phone         String?
+  source        CandidateSource @default(OTHER)
+  stage         CandidateStage  @default(APPLIED)
+  score         Float?
+  resumeUrl     String?
+  notes         String?         @db.Text
+  rejectedReason String?
+  hiredAt       DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  job           Job             @relation(fields: [jobId], references: [id])
+  company       Company         @relation(fields: [companyId], references: [id])
+  interviews    Interview[]
+
+  @@map("candidates")
+}
+
+model Interview {
+  id            String          @id @default(cuid())
+  candidateId   String
+  scheduledAt   DateTime
+  durationMins  Int             @default(60)
+  type          InterviewType   @default(VIDEO)
+  interviewers  String[]
+  status        InterviewStatus @default(SCHEDULED)
+  feedback      String?
+  rating        Int?
+  createdAt     DateTime        @default(now())
+
+  candidate     Candidate       @relation(fields: [candidateId], references: [id])
+
+  @@map("interviews")
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+  REMOTE
+}
+
+enum JobStatus {
+  DRAFT
+  PUBLISHED
+  PAUSED
+  CLOSED
+}
+
+enum CandidateSource {
+  KARIYER_NET
+  LINKEDIN
+  INDEED
+  REFERRAL
+  DIRECT
+  GITHUB
+  OTHER
+}
+
+enum CandidateStage {
+  APPLIED
+  SCREENING
+  INTERVIEW
+  OFFER
+  HIRED
+  REJECTED
+}
+
+enum InterviewType {
+  PHONE
+  VIDEO
+  IN_PERSON
+  TECHNICAL
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+// ─── PERFORMANCE ──────────────────────────────────────────────────────────────
+
+model OKR {
+  id            String      @id @default(cuid())
+  companyId     String
+  ownerId       String
+  parentId      String?
+  title         String
+  description   String?
+  period        String      // "2024-Q1"
+  type          OKRType     @default(OBJECTIVE)
+  progress      Float       @default(0)
+  status        OKRStatus   @default(ON_TRACK)
+  dueDate       DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  company       Company     @relation(fields: [companyId], references: [id])
+  owner         Employee    @relation(fields: [ownerId], references: [id])
+  parent        OKR?        @relation("OKRTree", fields: [parentId], references: [id])
+  children      OKR[]       @relation("OKRTree")
+
+  @@map("okrs")
+}
+
+model Review {
+  id            String        @id @default(cuid())
+  companyId     String
+  revieweeId    String
+  reviewerId    String?
+  cycleId       String?
+  type          ReviewType    @default(SELF)
+  status        ReviewStatus  @default(PENDING)
+  rating        Float?
+  strengths     String?       @db.Text
+  improvements  String?       @db.Text
+  summary       String?       @db.Text
+  submittedAt   DateTime?
+  createdAt     DateTime      @default(now())
+
+  company       Company       @relation(fields: [companyId], references: [id])
+  reviewee      Employee      @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+
+  @@map("reviews")
+}
+
+enum OKRType {
+  OBJECTIVE
+  KEY_RESULT
+}
+
+enum OKRStatus {
+  ON_TRACK
+  AT_RISK
+  BEHIND
+  COMPLETED
+}
+
+enum ReviewType {
+  SELF
+  MANAGER
+  PEER
+  UPWARD
+}
+
+enum ReviewStatus {
+  PENDING
+  IN_PROGRESS
+  SUBMITTED
+}
+
+// ─── LMS ─────────────────────────────────────────────────────────────────────
+
+model Course {
+  id            String        @id @default(cuid())
+  companyId     String
+  title         String
+  description   String?       @db.Text
+  category      String?
+  coverUrl      String?
+  durationMins  Int?
+  isRequired    Boolean       @default(false)
+  createdById   String?
+  status        CourseStatus  @default(DRAFT)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  company       Company       @relation(fields: [companyId], references: [id])
+  lessons       Lesson[]
+  enrollments   Enrollment[]
+
+  @@map("courses")
+}
+
+model Lesson {
+  id            String      @id @default(cuid())
+  courseId      String
+  title         String
+  content       String?     @db.Text
+  videoUrl      String?
+  durationMins  Int?
+  order         Int         @default(0)
+  createdAt     DateTime    @default(now())
+
+  course        Course      @relation(fields: [courseId], references: [id])
+
+  @@map("lessons")
+}
+
+model Enrollment {
+  id            String            @id @default(cuid())
+  courseId      String
+  employeeId    String
+  status        EnrollmentStatus  @default(NOT_STARTED)
+  progress      Float             @default(0)
+  completedAt   DateTime?
+  dueDate       DateTime?
+  createdAt     DateTime          @default(now())
+
+  course        Course            @relation(fields: [courseId], references: [id])
+  employee      Employee          @relation(fields: [employeeId], references: [id])
+
+  @@unique([courseId, employeeId])
+  @@map("enrollments")
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EnrollmentStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+// ─── ENGAGEMENT ───────────────────────────────────────────────────────────────
+
+model Survey {
+  id            String        @id @default(cuid())
+  companyId     String
+  title         String
+  type          SurveyType    @default(PULSE)
+  status        SurveyStatus  @default(DRAFT)
+  anonymous     Boolean       @default(true)
+  scheduledAt   DateTime?
+  closedAt      DateTime?
+  createdAt     DateTime      @default(now())
+
+  company       Company       @relation(fields: [companyId], references: [id])
+  questions     SurveyQuestion[]
+  responses     SurveyResponse[]
+
+  @@map("surveys")
+}
+
+model SurveyQuestion {
+  id        String    @id @default(cuid())
+  surveyId  String
+  text      String
+  type      String    @default("RATING") // RATING, TEXT, SCALE
+  order     Int       @default(0)
+
+  survey    Survey    @relation(fields: [surveyId], references: [id])
+  answers   SurveyAnswer[]
+
+  @@map("survey_questions")
+}
+
+model SurveyResponse {
+  id          String    @id @default(cuid())
+  surveyId    String
+  employeeId  String?
+  submittedAt DateTime  @default(now())
+
+  survey      Survey    @relation(fields: [surveyId], references: [id])
+  answers     SurveyAnswer[]
+
+  @@map("survey_responses")
+}
+
+model SurveyAnswer {
+  id          String          @id @default(cuid())
+  responseId  String
+  questionId  String
+  ratingValue Int?
+  textValue   String?
+
+  response    SurveyResponse  @relation(fields: [responseId], references: [id])
+  question    SurveyQuestion  @relation(fields: [questionId], references: [id])
+
+  @@map("survey_answers")
+}
+
+model Recognition {
+  id          String    @id @default(cuid())
+  companyId   String
+  fromId      String
+  toId        String
+  message     String
+  badge       String?
+  public      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  company     Company   @relation(fields: [companyId], references: [id])
+  from        Employee  @relation("RecognitionGiven", fields: [fromId], references: [id])
+  to          Employee  @relation("RecognitionReceived", fields: [toId], references: [id])
+
+  @@map("recognitions")
+}
+
+enum SurveyType {
+  PULSE
+  ENPS
+  ONBOARDING
+  EXIT
+  CUSTOM
+}
+
+enum SurveyStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+// ─── KVKK ─────────────────────────────────────────────────────────────────────
+
+model KvkkConsent {
+  id            String        @id @default(cuid())
+  companyId     String
+  employeeId    String
+  category      String
+  purpose       String
+  granted       Boolean
+  grantedAt     DateTime?
+  revokedAt     DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime      @default(now())
+
+  company       Company       @relation(fields: [companyId], references: [id])
+  employee      Employee      @relation(fields: [employeeId], references: [id])
+
+  @@map("kvkk_consents")
+}
+
+model KvkkRequest {
+  id            String          @id @default(cuid())
+  companyId     String
+  employeeId    String
+  type          KvkkRequestType
+  status        KvkkReqStatus   @default(PENDING)
+  description   String?
+  responseNote  String?
+  dueDate       DateTime
+  resolvedAt    DateTime?
+  createdAt     DateTime        @default(now())
+
+  company       Company         @relation(fields: [companyId], references: [id])
+  employee      Employee        @relation(fields: [employeeId], references: [id])
+
+  @@map("kvkk_requests")
+}
+
+enum KvkkRequestType {
+  ACCESS
+  CORRECTION
+  DELETION
+  OBJECTION
+  PORTABILITY
+}
+
+enum KvkkReqStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+  REJECTED
+}
+
+// ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
+
+model Notification {
+  id          String    @id @default(cuid())
+  userId      String
+  companyId   String
+  type        String
+  title       String
+  body        String?
+  link        String?
+  read        Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
