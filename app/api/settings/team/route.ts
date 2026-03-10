@@ -1,4 +1,3 @@
-export const dynamic = 'force-dynamic'
 // app/api/settings/team/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
@@ -6,6 +5,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
+
+export const dynamic = 'force-dynamic'
 
 const inviteSchema = z.object({
   email: z.string().email(),

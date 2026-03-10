@@ -1,8 +1,9 @@
-export const dynamic = 'force-dynamic'
 // app/api/employees/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+
+export const dynamic = 'force-dynamic'
 
 const createSchema = z.object({
   companyId: z.string(),

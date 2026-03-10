@@ -1,7 +1,8 @@
-export const dynamic = 'force-dynamic'
 // app/api/payroll/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+
+export const dynamic = 'force-dynamic'
 
 // Turkish payroll constants (2024)
 const SGK_EMPLOYEE_RATE = 0.14   // 14%

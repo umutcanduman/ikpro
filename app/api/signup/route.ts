@@ -1,9 +1,10 @@
-export const dynamic = 'force-dynamic'
 // app/api/signup/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
+
+export const dynamic = 'force-dynamic'
 
 const schema = z.object({
   name: z.string().min(2),

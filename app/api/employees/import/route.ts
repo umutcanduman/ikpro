@@ -1,7 +1,8 @@
-export const dynamic = 'force-dynamic'
 // app/api/employees/import/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+
+export const dynamic = 'force-dynamic'
 
 // POST /api/employees/import
 // Body: { companyId: string, rows: Array<raw csv row objects> }

@@ -1,4 +1,3 @@
-export const dynamic = 'force-dynamic'
 // app/api/stripe/checkout/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
@@ -6,6 +5,8 @@ import { authOptions } from '@/lib/auth'
 import { createCheckoutSession } from '@/lib/stripe'
 import { z } from 'zod'
 import type { Plan } from '@prisma/client'
+
+export const dynamic = 'force-dynamic'
 
 const checkoutSchema = z.object({
   planId: z.enum(['GROWTH', 'PRO', 'ENTERPRISE']),

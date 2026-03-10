@@ -1,7 +1,8 @@
-export const dynamic = 'force-dynamic'
 // app/api/leave/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+
+export const dynamic = 'force-dynamic'
 
 // GET /api/leave?companyId=&employeeId=&status=
 export async function GET(req: NextRequest) {
