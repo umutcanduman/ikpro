@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 // app/api/stripe/portal/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
