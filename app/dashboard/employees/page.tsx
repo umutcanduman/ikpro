@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import {
   Search, Plus, Filter, Upload, Download, MoreHorizontal,
   Mail, Phone, Building2, Calendar, ChevronDown, Users,
@@ -69,8 +69,8 @@ function Avatar({ employee, size = 'md' }: { employee: Pick<Employee, 'firstName
 }
 
 export default function EmployeesPage() {
-  const params = useSearchParams()
-  const companyId = params.get('companyId') || 'demo'
+  const { data: session } = useSession()
+  const companyId = (session?.user as any)?.companyId || ''
 
   const [employees, setEmployees] = useState<Employee[]>([])
   const [total, setTotal] = useState(0)
@@ -86,10 +86,10 @@ export default function EmployeesPage() {
   const [showImport, setShowImport] = useState(false)
 
   const fetchEmployees = useCallback(async () => {
+    if (!companyId) return
     setLoading(true)
     try {
       const qs = new URLSearchParams({
-        companyId,
         ...(search ? { search } : {}),
         ...(filterDept ? { department: filterDept } : {}),
         ...(filterStatus ? { status: filterStatus } : {}),
